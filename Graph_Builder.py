@@ -1,58 +1,66 @@
 import networkx as nx
+import nltk
+import re
+from nltk.corpus import stopwords
 from collections import defaultdict
-from Data_Loader import load_and_preprocess
 
-# Define a small set of stopwords to ignore common words
-STOPWORDS = set([
-    "the", "and", "to", "a", "is", "in", "on", "for", "of", 
-    "with", "this", "that", "it", "as", "at", "by", "an"
-])
+nltk.download('stopwords')
+stop_words = set(stopwords.words("english"))
 
-"""
-    Optimized email graph builder using inverted index and stopwords removal.
+def clean_and_tokenize(text: str):
+    text = str(text).lower()
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
+    words = text.split()
+    words = [w for w in words if w not in stop_words and len(w) > 2]
+    return set(words)
 
-    Args:
-        df: preprocessed dataframe with columns 'text' and 'label'
-        word_threshold: minimum number of shared words to create an edge
-"""
-def build_email_graph_optimized(df, word_threshold=5):
+
+'''
+JS = all common words/all similar words
+
+'''
+def jaccard_similarity(set1, set2):
+  
+    if not set1 or not set2:
+        return 0
+    return len(set1 & set2) / len(set1 | set2)
+
+    """
+    Build optimized email graph:
+    1. Apply preprocessing
+    2. Compute similarities using Jaccard
+    3. Add only top-K similar edges per node
+    """
+def build_email_graph_optimized(df, similarity_threshold=0.20, top_k=5):
     G = nx.Graph()
-    
-    # Add nodes with label
+
+    processed = {}
     for idx, row in df.iterrows():
-        G.add_node(idx, label=row['label'])
-    
-    # Convert text to sets of words and remove stopwords
-    texts = df['text'].apply(lambda x: set(word for word in str(x).split() if word not in STOPWORDS))
-    
-    # Build inverted index: word -> set of email indices containing it
-    inverted_index = defaultdict(set)
-    for idx, word_set in texts.items():
-        for word in word_set:
-            inverted_index[word].add(idx)
-    
-    # Keep track of edges already added
-    added_edges = set()
-    
-    # Build edges based on shared words
-    for i in range(len(df)):
-        # DEBUG PRINT: show progress every 500 emails
+        G.add_node(idx, label=row["label"])
+        processed[idx] = clean_and_tokenize(row["text"])
+
+    email_ids = list(processed.keys())
+
+    for i in range(len(email_ids)):
+        
         if i % 500 == 0:
             print(f"Processing email {i}/{len(df)}")
-        
-        neighbors = defaultdict(int)  # email idx -> count of shared words
-        
-        for word in texts[i]:
-            for j in inverted_index[word]:
-                if i != j:
-                    neighbors[j] += 1
-        
-        # Add edges if threshold is met
-        for j, count in neighbors.items():
-            if count >= word_threshold:
-                edge = tuple(sorted((i, j)))
-                if edge not in added_edges:
-                    G.add_edge(i, j, type='text', weight=count)
-                    added_edges.add(edge)
+            
+        e1 = email_ids[i]
+        set1 = processed[e1]
     
+        similarities = [] 
+        for j in range(i + 1, len(email_ids)):
+            e2 = email_ids[j]
+            sim = jaccard_similarity(set1, processed[e2])
+
+            if sim >= similarity_threshold:
+                similarities.append((e2, sim))
+
+        similarities.sort(key=lambda x: x[1], reverse=True)
+        top_sim = similarities[:top_k]
+
+        for e2, sim in top_sim:
+            G.add_edge(e1, e2, weight=sim)
+
     return G

@@ -15,7 +15,7 @@ def main():
     df_raw = load_and_preprocess(r"C:\Users\alimo\OneDrive\Desktop\EmailSpamDataset.csv")
     print(f"Dataset loaded with {len(df_raw)} emails")
     
-    graph = build_email_graph_optimized(df_raw, word_threshold=15)
+    graph = build_email_graph_optimized(df_raw,similarity_threshold=0.20, top_k=5)
     print(f"Graph built with {graph.number_of_nodes()} nodes and {graph.number_of_edges()} edges")
 
     labels = {idx: row['label'] for idx, row in df_raw.iterrows()}
